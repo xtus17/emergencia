@@ -1,0 +1,91 @@
+name: Cron Emergencia
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Ejecutar cada 5 minutos
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '24'
+
+      - name: Restore cache
+        id: restore-cache
+        uses: actions/cache@v3
+        with:
+          path: .emergencia_cache
+          key: emergencia-data-cache-${{ github.run_id }}
+          restore-keys: |
+            emergencia-data-cache-
+
+      - name: Display initial cache value
+        run: |
+          echo "Verificando contenido inicial de la caché..."
+          if [ -f ".emergencia_cache/last_emergencia.txt" ]; then
+            echo "Valor inicial del caché:"
+            cat .emergencia_cache/last_emergencia.txt
+          else
+            echo "El archivo de caché .emergencia_cache/last_emergencia.txt no existe."
+          fi
+
+      - name: Configure Firebase Admin
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_CREDENTIALS }}
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-service-account.json
+          cat firebase-service-account.json
+          echo "Valor: abc${{ secrets.FIREBASE_CREDENTIALS }}def"
+
+      - name: Fetch Emergencia Data
+        id: fetch_emergencia
+        run: |
+          mkdir -p .emergencia_cache
+          LAST_CACHE=""
+
+          if [ -f ".emergencia_cache/last_emergencia.txt" ]; then
+            LAST_CACHE=$(cat .emergencia_cache/last_emergencia.txt)
+          fi
+          echo "Última emergencia desde la caché: $LAST_CACHE"
+
+          NEW_EMERGENCIA=$(curl -s --fail https://reportsismo.vercel.app/api/sismo || echo "")
+          echo "Nueva emergencia obtenido desde el endpoint: $NEW_EMERGENCIA"
+
+          if [ "$NEW_EMERGENCIA" != "$LAST_CACHE" ] && [ "$NEW_EMERGENCIA" != "" ]; then
+            echo "Los valores son diferentes: (Cache) $LAST_CACHE != (Response) $NEW_EMERGENCIA"
+            echo "EMERGENCIA_RESPONSE=${NEW_EMERGENCIA}" >> $GITHUB_ENV
+            echo "$NEW_EMERGENCIA" > .emergencia_cache/last_emergencia.txt
+          else
+            echo "Los valores son iguales o la nueva emergencia es vacío: (Cache) $LAST_CACHE == (Response) $NEW_EMERGENCIA"
+          fi
+
+      - name: Save cache
+        uses: actions/cache@v3
+        with:
+          path: .emergencia_cache
+          key: emergencia-data-cache-${{ github.run_id }}
+
+      - name: Send Notifications if Different
+        if: env.EMERGENCIA_RESPONSE != ''
+        run: |
+          echo "Enviando notificaciones con EMERGENCIA_RESPONSE: ${{ env.EMERGENCIA_RESPONSE }}"
+          node sendNotifications.js
+        env:
+          EMERGENCIA_RESPONSE: ${{ env.EMERGENCIA_RESPONSE }}
+
+      - name: Display final cache value
+        run: |
+          echo "Verificando contenido final de la caché..."
+          if [ -f ".emergencia_cache/last_emergencia.txt" ]; then
+            echo "Valor final del caché:"
+            cat .emergencia_cache/last_emergencia.txt
+          else
+            echo "El archivo de caché .emergencia_cache/last_emergencia.txt no existe."
+          fi
