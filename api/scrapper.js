@@ -383,8 +383,8 @@ scrapear();
 
 
 
-const axios = require("axios");
-const cheerio = require("cheerio");
+import axios from "axios";
+import cheerio from "cheerio";
 
 const BASE = "https://sgonorte.bomberosperu.gob.pe/24horas/?criterio=";
 const CRITERIOS = ["huacho", "vegueta", "huaura"];
@@ -398,70 +398,55 @@ async function scrapeOne(criterio) {
   });
 
   const $ = cheerio.load(html);
-  const row = $("table tbody tr").first(); // asumimos que es la más reciente
+  const row = $("table tbody tr").first();
   const tds = row.find("td");
   if (!tds.length) return null;
 
-  const numeroparte = $(tds[0]).text().trim();
-  const fecha = $(tds[1]).text().trim();
-  const direccion = $(tds[2]).text().trim();
-  const tipo = $(tds[3]).text().trim();
-  const compania = $(tds[4]).text().trim();
-
   return {
     criterio,
-    numeroparte,
-    fecha,
-    direccion,
-    tipo,
-    compania,
+    numeroparte: $(tds[0]).text().trim(),
+    fecha: $(tds[1]).text().trim(),
+    direccion: $(tds[2]).text().trim(),
+    tipo: $(tds[3]).text().trim(),
+    compania: $(tds[4]).text().trim(),
   };
 }
 
-// Ajusta esto al formato real, por ejemplo "29/11/2025 21:30"
-function parseFecha(fechaStr) {
-  // placeholder mientras no confirmes formato exacto
-  return new Date(fechaStr);
+function parseFecha(f) {
+  return new Date(f);
 }
 
-function esTipoValido(tipo) {
-  const t = tipo.toUpperCase();
-  return t.includes("ACCIDENTE VEHICULAR") || t.includes("INCENDIO");
-}
+export default async function handler(req, res) {
+  try {
+    const resultados = (await Promise.all(CRITERIOS.map(scrapeOne))).filter(
+      Boolean
+    );
 
-async function main() {
-  const resultados = (await Promise.all(CRITERIOS.map(scrapeOne))).filter(
-    Boolean
-  );
+    if (!resultados.length) {
+      return res.status(200).json({ success: true, data: null });
+    }
 
-  if (!resultados.length) {
-    console.log(JSON.stringify({ success: true, data: null }, null, 2));
-    return;
+    const masReciente = resultados.reduce((best, cur) => {
+      if (!best) return cur;
+      return parseFecha(cur.fecha) > parseFecha(best.fecha) ? cur : best;
+    }, null);
+
+    return res.status(200).json({
+      success: true,
+      data: masReciente
+        ? [
+            masReciente.fecha,
+            masReciente.direccion,
+            masReciente.tipo,
+            masReciente.compania,
+            masReciente.numeroparte,
+          ]
+        : null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
-
-  // Elegir la más reciente entre las 3
-  const masReciente = resultados.reduce((best, cur) => {
-    if (!best) return cur;
-    const fBest = parseFecha(best.fecha);
-    const fCur = parseFecha(cur.fecha);
-    return fCur > fBest ? cur : best;
-  }, null);
-
-  // Salida en JSON
-  const salida = {
-    success: true,
-    data: masReciente
-      ? [
-          masReciente.fecha,
-          masReciente.direccion,
-          masReciente.tipo,
-          masReciente.compania,
-          masReciente.numeroparte,
-        ]
-      : null,
-  };
-
-  console.log(JSON.stringify(salida, null, 2));
 }
-
-main().catch(console.error);
