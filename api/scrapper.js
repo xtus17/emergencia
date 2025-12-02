@@ -291,7 +291,6 @@ async function main() {
 main().catch(console.error);
 */
 
-
 /*
 const { chromium } = require("playwright");
 
@@ -380,8 +379,6 @@ async function scrapear() {
 
 scrapear();
 */
-
-
 
 import axios from "axios";
 import cheerio from "cheerio";
