@@ -57,7 +57,13 @@ jobs:
 
           if [ "$NEW_EMERGENCIA" != "$LAST_CACHE" ] && [ "$NEW_EMERGENCIA" != "" ]; then
             echo "Los valores son diferentes."
-            echo "EMERGENCIA_RESPONSE=$NEW_EMERGENCIA" >> $GITHUB_ENV
+
+            cat << EOF >> $GITHUB_ENV
+EMERGENCIA_RESPONSE<<ENDJSON
+$NEW_EMERGENCIA
+ENDJSON
+EOF
+
             echo "$NEW_EMERGENCIA" > .emergencia_cache/last_emergencia.txt
           else
             echo "No hay cambios o el valor es vacío."
