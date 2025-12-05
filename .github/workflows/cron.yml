@@ -55,7 +55,7 @@ jobs:
           fi
           echo "Última emergencia desde la caché: $LAST_CACHE"
 
-          NEW_EMERGENCIA=$(curl -s --fail https://reportsismo.vercel.app/api/sismo || echo "")
+          NEW_EMERGENCIA=$(curl -s --fail https://emergencia-blue.vercel.app/api/scrapper || echo "")
           echo "Nueva emergencia obtenido desde el endpoint: $NEW_EMERGENCIA"
 
           if [ "$NEW_EMERGENCIA" != "$LAST_CACHE" ] && [ "$NEW_EMERGENCIA" != "" ]; then
