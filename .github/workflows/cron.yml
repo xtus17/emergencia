@@ -75,7 +75,10 @@ jobs:
       - name: Send Notifications if Different
         if: env.EMERGENCIA_RESPONSE != ''
         run: |
-          echo "Enviando notificaciones con EMERGENCIA_RESPONSE: ${{ env.EMERGENCIA_RESPONSE }}"
+     
+          echo 'Enviando notificaciones con EMERGENCIA_RESPONSE:'
+          echo '${{ env.EMERGENCIA_RESPONSE }}'
+
           node sendNotifications.js
         env:
           EMERGENCIA_RESPONSE: ${{ env.EMERGENCIA_RESPONSE }}
