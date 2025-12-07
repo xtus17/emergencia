@@ -59,10 +59,10 @@ jobs:
             echo "Los valores son diferentes."
 
             cat << EOF >> $GITHUB_ENV
-EMERGENCIA_RESPONSE<<ENDJSON
-$NEW_EMERGENCIA
-ENDJSON
-EOF
+            EMERGENCIA_RESPONSE<<ENDJSON
+            $NEW_EMERGENCIA
+            ENDJSON
+          EOF
 
             echo "$NEW_EMERGENCIA" > .emergencia_cache/last_emergencia.txt
           else
