@@ -11,97 +11,116 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: "24"
-
-      - name: Restore cache
+      # 1. Recuperar el caché más reciente
+      - name: Restore Cache
         id: restore-cache
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v3
         with:
           path: .emergencia_cache
-          key: emergencia-data-cache
-          restore-keys: emergencia-data-cache
+          # Truco: Buscamos cualquier caché que empiece por este prefijo
+          # pero definimos una key que no existe para forzar la búsqueda en restore-keys
+          key: cache-dynamic-${{ github.run_id }}
+          restore-keys: |
+            emergencia-v1-
 
-      - name: Display initial cache value
-        run: |
-          echo "Verificando contenido inicial de la caché..."
-          if [ -f ".emergencia_cache/last_numero_parte.txt" ]; then
-            echo "Último numeroParte en caché:"
-            cat .emergencia_cache/last_numero_parte.txt
-          else
-            echo "El archivo de caché no existe (primera ejecución)."
-          fi
-
-      - name: Configure Firebase Admin
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_CREDENTIALS }}
-        run: |
-          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-service-account.json
-
-      - name: Fetch Emergencia Data
-        id: fetch_emergencia
+      # 2. Lógica de Comparación (Bash)
+      - name: Fetch & Compare
+        id: check
         run: |
           mkdir -p .emergencia_cache
-          LAST_NUMERO_PARTE=""
           
+          echo "========================================"
+          echo "🔎 ESTADO INICIAL DEL CACHÉ"
+          echo "========================================"
+          
+          # A. LEER CACHÉ (Si existe)
+          LAST_NUMERO=""
           if [ -f ".emergencia_cache/last_numero_parte.txt" ]; then
-            LAST_NUMERO_PARTE=$(cat .emergencia_cache/last_numero_parte.txt)
-          fi
-          
-          echo "Último numeroParte desde la caché: $LAST_NUMERO_PARTE"
-          
-          NEW_EMERGENCIA=$(curl -s https://emergencia-blue.vercel.app/api/scrapper || echo "")
-          echo "Nueva emergencia obtenida desde el endpoint: $NEW_EMERGENCIA"
-          
-          if [ "$NEW_EMERGENCIA" != "" ]; then
-            # Extraer numeroParte del JSON (último elemento del array data)
-            NUEVO_NUMERO_PARTE=$(echo "$NEW_EMERGENCIA" | jq -r '.data[-1]' 2>/dev/null || echo "")
-            
-            echo "Nuevo numeroParte: $NUEVO_NUMERO_PARTE"
-            
-            if [ "$NUEVO_NUMERO_PARTE" != "$LAST_NUMERO_PARTE" ] && [ "$NUEVO_NUMERO_PARTE" != "" ] && [ "$NUEVO_NUMERO_PARTE" != "null" ]; then
-              echo "Los numeroParte son diferentes. Procesando emergencia..."
-              
-              {
-                echo 'EMERGENCIA_RESPONSE<<ENDJSON'
-                echo "$NEW_EMERGENCIA"
-                echo 'ENDJSON'
-              } >> "$GITHUB_ENV"
-              
-              echo "$NUEVO_NUMERO_PARTE" > .emergencia_cache/last_numero_parte.txt
-            else
-              echo "El numeroParte es el mismo o vacío. No se procesará."
-            fi
+            echo "✅ Archivo de caché encontrado (.emergencia_cache/last_numero_parte.txt)"
+            LAST_NUMERO=$(cat .emergencia_cache/last_numero_parte.txt)
+            echo "📄 Contenido recuperado: [$LAST_NUMERO]"
           else
-            echo "No hay respuesta del endpoint."
+            echo "❌ No se encontró archivo de caché previo. Es la primera ejecución o se limpió el caché."
+          fi
+          echo "========================================"
+
+          # B. CONSULTAR API
+          echo "📡 CONSULTANDO ENDPOINT..."
+          RESPONSE=$(curl -s https://emergencia-blue.vercel.app/api/scrapper || echo "")
+          
+          echo "📥 RESPUESTA DEL SERVIDOR:"
+          echo "$RESPONSE"
+          echo "========================================"
+          
+          if [ -z "$RESPONSE" ] || [ "$RESPONSE" == "null" ]; then
+             echo "⚠️ API vacía o error."
+             echo "SHOULD_RUN=false" >> $GITHUB_ENV
+             exit 0
           fi
 
-      - name: Save cache
-        uses: actions/cache@v3
+          # C. EXTRAER NUEVO NUMERO PARTE (Usando jq)
+          # Asumimos que la estructura es { success: true, data: [..., "2025040096"] }
+          # data[-1] toma el último elemento del array data.
+          NEW_NUMERO=$(echo "$RESPONSE" | jq -r '.data[-1]' 2>/dev/null)
+
+          echo "🔢 NumeroParte extraído de API: [$NEW_NUMERO]"
+          echo "💾 NumeroParte en Caché:      [$LAST_NUMERO]"
+          echo "========================================"
+
+          # D. VALIDAR Y COMPARAR
+          if [ "$NEW_NUMERO" == "null" ] || [ -z "$NEW_NUMERO" ]; then
+             echo "⚠️ No se pudo extraer numeroParte válido del JSON."
+             echo "SHOULD_RUN=false" >> $GITHUB_ENV
+             exit 0
+          fi
+
+          if [ "$NEW_NUMERO" == "$LAST_NUMERO" ]; then
+             echo "✅ IGUALES. No hacemos nada."
+             echo "SHOULD_RUN=false" >> $GITHUB_ENV
+          else
+             echo "🚀 DIFERENTES. ¡Nueva emergencia detectada!"
+             echo "SHOULD_RUN=true" >> $GITHUB_ENV
+             
+             # Preparamos variables para los siguientes pasos
+             {
+               echo 'EMERGENCIA_RESPONSE<<ENDJSON'
+               echo "$RESPONSE"
+               echo 'ENDJSON'
+             } >> "$GITHUB_ENV"
+
+             # ACTUALIZAMOS EL ARCHIVO LOCAL AHORA
+             # (Para que el paso de guardar caché lo tome)
+             echo "$NEW_NUMERO" > .emergencia_cache/last_numero_parte.txt
+             echo "📝 Nuevo valor escrito en caché local para futura persistencia."
+          fi
+
+      # 3. Guardar NUEVO Caché (SOLO SI CAMBIÓ)
+      # Al guardar con una key nueva (usando run_id), forzamos a GitHub a crear una nueva entrada.
+      # Si son iguales, saltamos este paso y el caché viejo sigue siendo válido para la próxima.
+      - name: Save Cache
+        if: env.SHOULD_RUN == 'true'
+        uses: actions/cache/save@v3
         with:
           path: .emergencia_cache
-          key: emergencia-data-cache
+          key: emergencia-v1-${{ github.run_id }}
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Send Notifications if Different
-        if: env.EMERGENCIA_RESPONSE != ''
-        run: |
-          echo 'Enviando notificaciones con EMERGENCIA_RESPONSE:'
-          echo "$EMERGENCIA_RESPONSE"
-          node sendNotifications.js
+      # 4. Configurar Node.js (SOLO SI CAMBIÓ)
+      - name: Setup Node
+        if: env.SHOULD_RUN == 'true'
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+          
+      # 5. Instalar y Ejecutar Script (SOLO SI CAMBIÓ)
+      - name: Install & Notify
+        if: env.SHOULD_RUN == 'true'
         env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_CREDENTIALS }}
           EMERGENCIA_RESPONSE: ${{ env.EMERGENCIA_RESPONSE }}
-
-      - name: Display final cache value
         run: |
-          echo "Verificando contenido final de la caché..."
-          if [ -f ".emergencia_cache/last_numero_parte.txt" ]; then
-            echo "numeroParte guardado:"
-            cat .emergencia_cache/last_numero_parte.txt
-          else
-            echo "El archivo no existe."
-          fi
+          echo "⚙️ Instalando dependencias..."
+          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-service-account.json
+          npm install
+          
+          echo "🚀 Ejecutando script de notificaciones..."
+          node sendNotifications.js
