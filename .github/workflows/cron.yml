@@ -33,18 +33,16 @@ jobs:
           echo "🔎 ESTADO INICIAL DEL CACHÉ"
           echo "========================================"
           
-          # A. LEER CACHÉ (Si existe)
           LAST_NUMERO=""
           if [ -f ".emergencia_cache/last_numero_parte.txt" ]; then
             echo "✅ Archivo de caché encontrado (.emergencia_cache/last_numero_parte.txt)"
             LAST_NUMERO=$(cat .emergencia_cache/last_numero_parte.txt)
             echo "📄 Contenido recuperado: [$LAST_NUMERO]"
           else
-            echo "❌ No se encontró archivo de caché previo. Es la primera ejecución o se limpió el caché."
+            echo "❌ No se encontró caché previo."
           fi
           echo "========================================"
 
-          # B. CONSULTAR API
           echo "📡 CONSULTANDO ENDPOINT..."
           RESPONSE=$(curl -s https://emergencia-blue.vercel.app/api/scrapper || echo "")
           
@@ -58,18 +56,26 @@ jobs:
              exit 0
           fi
 
-          # C. EXTRAER NUEVO NUMERO PARTE (Usando jq)
-          # Asumimos que la estructura es { success: true, data: [..., "2025040096"] }
-          # data[-1] toma el último elemento del array data.
+          # VERIFICAR SI DATA ES NULL ANTES DE CONTINUAR
+          IS_DATA_NULL=$(echo "$RESPONSE" | jq -r '.data == null')
+          
+          if [ "$IS_DATA_NULL" == "true" ]; then
+             echo "🛑 ALERTA: La API devolvió 'data: null'."
+             echo "No hay emergencias activas o el scraper falló."
+             echo "NO se actualizará el caché ni se enviarán notificaciones."
+             echo "SHOULD_RUN=false" >> $GITHUB_ENV
+             exit 0
+          fi
+
+          # C. EXTRAER NUEVO NUMERO PARTE (Solo si data no es null)
           NEW_NUMERO=$(echo "$RESPONSE" | jq -r '.data[-1]' 2>/dev/null)
 
           echo "🔢 NumeroParte extraído de API: [$NEW_NUMERO]"
           echo "💾 NumeroParte en Caché:      [$LAST_NUMERO]"
           echo "========================================"
 
-          # D. VALIDAR Y COMPARAR
           if [ "$NEW_NUMERO" == "null" ] || [ -z "$NEW_NUMERO" ]; then
-             echo "⚠️ No se pudo extraer numeroParte válido del JSON."
+             echo "⚠️ No se pudo extraer numeroParte válido (valor vacío o null)."
              echo "SHOULD_RUN=false" >> $GITHUB_ENV
              exit 0
           fi
@@ -81,17 +87,14 @@ jobs:
              echo "🚀 DIFERENTES. ¡Nueva emergencia detectada!"
              echo "SHOULD_RUN=true" >> $GITHUB_ENV
              
-             # Preparamos variables para los siguientes pasos
              {
                echo 'EMERGENCIA_RESPONSE<<ENDJSON'
                echo "$RESPONSE"
                echo 'ENDJSON'
              } >> "$GITHUB_ENV"
 
-             # ACTUALIZAMOS EL ARCHIVO LOCAL AHORA
-             # (Para que el paso de guardar caché lo tome)
              echo "$NEW_NUMERO" > .emergencia_cache/last_numero_parte.txt
-             echo "📝 Nuevo valor escrito en caché local para futura persistencia."
+             echo "📝 Nuevo valor escrito en caché local."
           fi
 
       # 3. Guardar NUEVO Caché (SOLO SI CAMBIÓ)
