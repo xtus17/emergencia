@@ -3,7 +3,7 @@ name: Cron Emergencia
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch:  # ← AÑADE ESTO
+  workflow_dispatch:
 
 jobs:
   notify:
@@ -29,10 +29,11 @@ jobs:
       - name: Display initial cache value
         run: |
           echo "Verificando contenido inicial de la caché..."
-          if [ -f ".emergencia_cache/last_emergencia.txt" ]; then
-            cat .emergencia_cache/last_emergencia.txt
+          if [ -f ".emergencia_cache/last_numero_parte.txt" ]; then
+            echo "Último numeroParte en caché:"
+            cat .emergencia_cache/last_numero_parte.txt
           else
-            echo "El archivo de caché .emergencia_cache/last_emergencia.txt no existe."
+            echo "El archivo de caché no existe (primera ejecución)."
           fi
 
       - name: Configure Firebase Admin
@@ -45,29 +46,38 @@ jobs:
         id: fetch_emergencia
         run: |
           mkdir -p .emergencia_cache
-          LAST_CACHE=""
-
-          if [ -f ".emergencia_cache/last_emergencia.txt" ]; then
-            LAST_CACHE=$(cat .emergencia_cache/last_emergencia.txt)
+          LAST_NUMERO_PARTE=""
+          
+          if [ -f ".emergencia_cache/last_numero_parte.txt" ]; then
+            LAST_NUMERO_PARTE=$(cat .emergencia_cache/last_numero_parte.txt)
           fi
-
-          echo "Última emergencia desde la caché: $LAST_CACHE"
-
+          
+          echo "Último numeroParte desde la caché: $LAST_NUMERO_PARTE"
+          
           NEW_EMERGENCIA=$(curl -s https://emergencia-blue.vercel.app/api/scrapper || echo "")
           echo "Nueva emergencia obtenida desde el endpoint: $NEW_EMERGENCIA"
-
-          if [ "$NEW_EMERGENCIA" != "$LAST_CACHE" ] && [ "$NEW_EMERGENCIA" != "" ]; then
-            echo "Los valores son diferentes."
-
-          {
-           echo 'EMERGENCIA_RESPONSE<<ENDJSON'
-           echo "$NEW_EMERGENCIA"
-           echo 'ENDJSON'
-          } >> "$GITHUB_ENV"
-
-            echo "$NEW_EMERGENCIA" > .emergencia_cache/last_emergencia.txt
+          
+          if [ "$NEW_EMERGENCIA" != "" ]; then
+            # Extraer numeroParte del JSON (último elemento del array data)
+            NUEVO_NUMERO_PARTE=$(echo "$NEW_EMERGENCIA" | jq -r '.data[-1]' 2>/dev/null || echo "")
+            
+            echo "Nuevo numeroParte: $NUEVO_NUMERO_PARTE"
+            
+            if [ "$NUEVO_NUMERO_PARTE" != "$LAST_NUMERO_PARTE" ] && [ "$NUEVO_NUMERO_PARTE" != "" ] && [ "$NUEVO_NUMERO_PARTE" != "null" ]; then
+              echo "Los numeroParte son diferentes. Procesando emergencia..."
+              
+              {
+                echo 'EMERGENCIA_RESPONSE<<ENDJSON'
+                echo "$NEW_EMERGENCIA"
+                echo 'ENDJSON'
+              } >> "$GITHUB_ENV"
+              
+              echo "$NUEVO_NUMERO_PARTE" > .emergencia_cache/last_numero_parte.txt
+            else
+              echo "El numeroParte es el mismo o vacío. No se procesará."
+            fi
           else
-            echo "No hay cambios o el valor es vacío."
+            echo "No hay respuesta del endpoint."
           fi
 
       - name: Save cache
@@ -91,8 +101,9 @@ jobs:
       - name: Display final cache value
         run: |
           echo "Verificando contenido final de la caché..."
-          if [ -f ".emergencia_cache/last_emergencia.txt" ]; then
-            cat .emergencia_cache/last_emergencia.txt
+          if [ -f ".emergencia_cache/last_numero_parte.txt" ]; then
+            echo "numeroParte guardado:"
+            cat .emergencia_cache/last_numero_parte.txt
           else
             echo "El archivo no existe."
           fi
