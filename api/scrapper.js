@@ -384,7 +384,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 
 const BASE = "https://sgonorte.bomberosperu.gob.pe/24horas/?criterio=";
-const CRITERIOS = ["huacho", "vegueta", "huaura"];
+const CRITERIOS = ["huacho", "vegueta", "huaura","san isidro"];
 
 async function scrapeOne(criterio) {
   const { data: html } = await axios.get(BASE + criterio, {
