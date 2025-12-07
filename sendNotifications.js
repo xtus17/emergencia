@@ -7,7 +7,7 @@ import admin from "firebase-admin";
 
 // Cargar credenciales Firebase SIN assert
 const serviceAccount = JSON.parse(
-  fs.readFileSync("./firebase-service-account.json", "utf8")
+  fs.readFileSync("./firebase-service-account.json", "utsf8")
 );
 
 // Inicializar Firebase Admin SDK
