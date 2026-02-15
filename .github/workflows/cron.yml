@@ -44,7 +44,7 @@ jobs:
           echo "========================================"
 
           echo "📡 CONSULTANDO ENDPOINT..."
-          RESPONSE=$(curl -s https://emergencia-blue.vercel.app/api/scrapper || echo "")
+          RESPONSE=$(curl -s https://emergencia-seven.vercel.app//api/scrapper || echo "")
           
           echo "📥 RESPUESTA DEL SERVIDOR:"
           echo "$RESPONSE"
